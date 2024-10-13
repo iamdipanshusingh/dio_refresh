@@ -48,6 +48,12 @@ void main() {
 
   // Define the TokenManager instance.
   final tokenManager = TokenManager.instance;
+  tokenManager.setToken(
+    TokenStore(
+      accessToken: authToken,
+      refreshToken: refreshToken,
+    ),
+  );
 
   // Add the DioRefreshInterceptor.
   dio.interceptors.add(DioRefreshInterceptor(
