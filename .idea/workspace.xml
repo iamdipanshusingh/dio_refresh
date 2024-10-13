@@ -5,16 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e86db810-e285-4032-85c3-70121b3ddcb0" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/lib/src/dio_refresh.dart" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lib/src/exception.dart" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lib/src/token_manager.dart" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lib/src/token_store.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/libraries/Dart_SDK.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/libraries/Dart_SDK.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/dio_refresh.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/dio_refresh.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/pubspec.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/dio_refresh_test.dart" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/src/dio_refresh.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/src/dio_refresh.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/src/exception.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/src/exception.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/src/token_manager.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/src/token_manager.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/src/token_store.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/src/token_store.dart" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

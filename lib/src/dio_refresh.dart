@@ -1,20 +1,59 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
 
-typedef OnRefreshCallback = Future<TokenStore> Function(Dio, TokenStore);
-typedef ShouldRefreshCallback = bool Function(Response?);
-typedef TokenHeaderCallback = Map<String, String> Function(TokenStore);
-
+/// A custom `Dio` interceptor that handles token refresh logic for authenticated API requests.
+///
+/// The `DioRefreshInterceptor` class is used to automatically refresh access tokens
+/// when they expire. It listens for specific response status codes (like 401 or 403),
+/// triggers the token refresh process, and retries the failed request with the new token.
+///
+/// Example usage:
+/// ```dart
+/// final dio = Dio();
+/// dio.interceptors.add(DioRefreshInterceptor(
+///   tokenManager: tokenManager,
+///   onRefresh: (dio, tokenStore) async {
+///     // Implement token refresh logic here.
+///   },
+///   shouldRefresh: (response) => response?.statusCode == 401,
+///   authHeader: (tokenStore) => {
+///     'Authorization': 'Bearer ${tokenStore.accessToken}',
+///   },
+/// ));
+/// ```
+///
+/// This example shows how to add the interceptor to a `Dio` instance and define
+/// the callback for token refresh.
 class DioRefreshInterceptor extends Interceptor {
+  /// Manages the current token state and refresh process.
   final TokenManager tokenManager;
 
+  /// A callback that defines how to refresh the token.
+  ///
+  /// The `onRefresh` function is called when a refresh is needed, passing the `Dio` instance
+  /// and the current `TokenStore`. It should return a `Future` that resolves with a new `TokenStore`
+  /// containing updated tokens.
   final OnRefreshCallback onRefresh;
 
+  /// A callback to determine whether a response should trigger a token refresh.
+  ///
+  /// The `shouldRefresh` function checks if the response status indicates that a refresh
+  /// is necessary (e.g., status code 401 or 403). Returns `true` if a refresh should occur.
   final ShouldRefreshCallback shouldRefresh;
 
+  /// A callback that returns the headers required for authentication.
+  ///
+  /// The `authHeader` function generates headers using the `TokenStore` (e.g., Authorization
+  /// headers). These headers are added to the request before it is sent.
   final TokenHeaderCallback authHeader;
 
+  /// Creates an instance of `DioRefreshInterceptor`.
+  ///
+  /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
+  /// callback to manage the refresh process, a [shouldRefresh] callback to determine when
+  /// to refresh, and an [authHeader] callback to provide the necessary authentication headers.
   DioRefreshInterceptor({
     required this.tokenManager,
     required this.onRefresh,
@@ -22,6 +61,11 @@ class DioRefreshInterceptor extends Interceptor {
     required this.authHeader,
   });
 
+  /// Intercepts outgoing requests to add authorization headers.
+  ///
+  /// Before each request is sent, `_checkForRefreshToken` ensures that any ongoing
+  /// token refresh process is completed. Then, it adds the necessary authentication
+  /// headers using the [authHeader] callback.
   @override
   Future<void> onRequest(
     RequestOptions options,
@@ -35,6 +79,10 @@ class DioRefreshInterceptor extends Interceptor {
     super.onRequest(options.copyWith(headers: headers), handler);
   }
 
+  /// Intercepts incoming responses to check if a refresh is in progress.
+  ///
+  /// If a refresh process is active, it waits for the refresh to complete
+  /// before proceeding. Otherwise, it passes the response to the next handler.
   @override
   Future<void> onResponse(
     Response response,
@@ -47,6 +95,11 @@ class DioRefreshInterceptor extends Interceptor {
     }
   }
 
+  /// Intercepts errors to determine if a token refresh is needed.
+  ///
+  /// When an error response matches the [shouldRefresh] condition (e.g., 401),
+  /// the interceptor triggers the `onRefresh` callback to obtain a new token
+  /// and retries the original request with the updated token.
   @override
   Future<void> onError(
     DioException err,
@@ -126,6 +179,11 @@ class DioRefreshInterceptor extends Interceptor {
     }
   }
 
+  /// A helper method to wait for any ongoing token refresh process to complete.
+  ///
+  /// The `_checkForRefreshToken` method creates a `Completer` that completes once
+  /// the `isRefreshing` state of the `tokenManager` changes to `false`, indicating
+  /// that the refresh process has finished.
   Future<void> _checkForRefreshToken() {
     Completer<void> completer = Completer();
 
