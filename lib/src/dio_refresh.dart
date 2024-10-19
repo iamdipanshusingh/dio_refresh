@@ -138,41 +138,45 @@ class DioRefreshInterceptor extends Interceptor {
             tokenManager.tokenStore,
           );
 
-          tokenManager.isRefreshing.value = false;
           tokenManager.setToken(refreshResponse);
-
-          final header = authHeader(tokenManager.tokenStore);
-          request.headers = {...request.headers, ...header};
-
-          final dio = Dio(BaseOptions(baseUrl: request.baseUrl));
-          final res = await dio.request(
-            request.path,
-            cancelToken: request.cancelToken,
-            data: request.data,
-            onReceiveProgress: request.onReceiveProgress,
-            onSendProgress: request.onSendProgress,
-            queryParameters: request.queryParameters,
-            options: Options(
-              method: request.method,
-              sendTimeout: request.sendTimeout,
-              receiveTimeout: request.receiveTimeout,
-              extra: request.extra,
-              headers: request.headers,
-              responseType: request.responseType,
-              contentType: request.contentType,
-              validateStatus: request.validateStatus,
-              receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-              followRedirects: request.followRedirects,
-              maxRedirects: request.maxRedirects,
-              requestEncoder: request.requestEncoder,
-              responseDecoder: request.responseDecoder,
-              listFormat: request.listFormat,
-            ),
-          );
-          handler.resolve(res);
+          tokenManager.isRefreshing.value = false;
         } on DioException catch (e) {
           handler.next(e);
         }
+      }
+
+      try {
+        final header = authHeader(tokenManager.tokenStore);
+        request.headers = {...request.headers, ...header};
+
+        final dio = Dio(BaseOptions(baseUrl: request.baseUrl));
+        final res = await dio.request(
+          request.path,
+          cancelToken: request.cancelToken,
+          data: request.data,
+          onReceiveProgress: request.onReceiveProgress,
+          onSendProgress: request.onSendProgress,
+          queryParameters: request.queryParameters,
+          options: Options(
+            method: request.method,
+            sendTimeout: request.sendTimeout,
+            receiveTimeout: request.receiveTimeout,
+            extra: request.extra,
+            headers: request.headers,
+            responseType: request.responseType,
+            contentType: request.contentType,
+            validateStatus: request.validateStatus,
+            receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+            followRedirects: request.followRedirects,
+            maxRedirects: request.maxRedirects,
+            requestEncoder: request.requestEncoder,
+            responseDecoder: request.responseDecoder,
+            listFormat: request.listFormat,
+          ),
+        );
+        handler.resolve(res);
+      } on DioException catch (e) {
+        handler.next(e);
       }
     } else {
       handler.next(err);
