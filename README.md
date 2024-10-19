@@ -1,5 +1,8 @@
 # Dio Refresh Interceptor
 
+[![pub package](https://img.shields.io/pub/v/dio_refresh.svg)](https://pub.dev/packages/dio_refresh)
+![license](https://img.shields.io/github/license/iamdipanshusingh/dio_refresh.svg)
+
 A Dart package that provides an interceptor for handling automatic token refresh in `Dio` HTTP client requests. It simplifies the process of managing access and refresh tokens, ensuring that your API requests stay authenticated, even when the access token expires.
 
 ## Features
