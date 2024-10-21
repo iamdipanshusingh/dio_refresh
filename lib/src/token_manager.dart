@@ -19,7 +19,6 @@ import 'package:flutter/foundation.dart';
 /// ));
 /// print(tokenManager.accessToken);
 /// ```
-
 class TokenManager {
   String? _refreshToken;
   String? _accessToken;
@@ -49,6 +48,9 @@ class TokenManager {
   /// This is useful for observing the refresh state and triggering actions
   /// when a refresh is in progress or has completed.
   final ValueNotifier<bool> _isRefreshing = ValueNotifier(false);
+
+  /// Indicates if a pre-expiry refresh is in progress.
+  bool isPreExpiryRefreshing = false;
 
   /// Provides access to the `ValueNotifier` indicating whether a refresh is in progress.
   ValueNotifier<bool> get isRefreshing => _isRefreshing;

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 
 /// A custom `Dio` interceptor that handles token refresh logic for authenticated API requests.
 ///
@@ -49,6 +50,12 @@ class DioRefreshInterceptor extends Interceptor {
   /// headers). These headers are added to the request before it is sent.
   final TokenHeaderCallback authHeader;
 
+  /// Indicates whether the token should be refreshed before it expires.
+  final bool shouldPreRefreshToken;
+
+  /// The duration (in seconds) before token expiry to trigger a pre-refresh.
+  final int preExpiryDuration;
+
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
   /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
@@ -59,6 +66,8 @@ class DioRefreshInterceptor extends Interceptor {
     required this.onRefresh,
     required this.shouldRefresh,
     required this.authHeader,
+    this.shouldPreRefreshToken = false,
+    this.preExpiryDuration = 300,
   });
 
   /// Intercepts outgoing requests to add authorization headers.
@@ -71,6 +80,28 @@ class DioRefreshInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    if (!tokenManager.isPreExpiryRefreshing) {
+      final jwt = tokenManager.tokenStore.accessToken;
+      Map<String, dynamic> decodedToken = JwtDecoder.decode(jwt!);
+      if (decodedToken['exp'] != null) {
+        final expiry = DateTime.fromMillisecondsSinceEpoch(
+          decodedToken['exp'] * 1000,
+        );
+        final now = DateTime.now();
+        final diff = expiry.difference(now).inSeconds;
+
+        if (diff < preExpiryDuration) {
+          // No await here
+          tokenManager.isPreExpiryRefreshing = true;
+          try {
+            _onRefresh(options);
+          } finally {
+            tokenManager.isPreExpiryRefreshing = false;
+          }
+        }
+      }
+    }
+
     await _checkForRefreshToken();
 
     final header = authHeader(tokenManager.tokenStore);
@@ -114,31 +145,7 @@ class DioRefreshInterceptor extends Interceptor {
       } else {
         try {
           tokenManager.isRefreshing.value = true;
-
-          final headers = {...request.headers};
-          headers.remove("content-length");
-
-          final refreshDio = Dio(BaseOptions(
-            sendTimeout: request.sendTimeout,
-            receiveTimeout: request.receiveTimeout,
-            extra: request.extra,
-            headers: headers,
-            responseType: request.responseType,
-            contentType: request.contentType,
-            validateStatus: request.validateStatus,
-            receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-            followRedirects: request.followRedirects,
-            maxRedirects: request.maxRedirects,
-            requestEncoder: request.requestEncoder,
-            responseDecoder: request.responseDecoder,
-            listFormat: request.listFormat,
-          ));
-          final refreshResponse = await onRefresh(
-            refreshDio,
-            tokenManager.tokenStore,
-          );
-
-          tokenManager.setToken(refreshResponse);
+          await _onRefresh(request);
           tokenManager.isRefreshing.value = false;
         } on DioException catch (e) {
           handler.next(e);
@@ -205,5 +212,35 @@ class DioRefreshInterceptor extends Interceptor {
     }
 
     return completer.future;
+  }
+
+  /// A helper method to handle the token refresh process.
+  ///
+  /// The `_onRefresh` method creates a new `Dio` instance with the same options as the original request,
+  /// calls the `onRefresh` callback to obtain a new token, and updates the `tokenManager` with the new token.
+  Future<void> _onRefresh(RequestOptions request) async {
+    final headers = {...request.headers};
+    headers.remove("content-length");
+
+    final refreshDio = Dio(BaseOptions(
+      sendTimeout: request.sendTimeout,
+      receiveTimeout: request.receiveTimeout,
+      extra: request.extra,
+      headers: headers,
+      responseType: request.responseType,
+      contentType: request.contentType,
+      validateStatus: request.validateStatus,
+      receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+      followRedirects: request.followRedirects,
+      maxRedirects: request.maxRedirects,
+      requestEncoder: request.requestEncoder,
+      responseDecoder: request.responseDecoder,
+      listFormat: request.listFormat,
+    ));
+    final refreshResponse = await onRefresh(
+      refreshDio,
+      tokenManager.tokenStore,
+    );
+    tokenManager.setToken(refreshResponse);
   }
 }
