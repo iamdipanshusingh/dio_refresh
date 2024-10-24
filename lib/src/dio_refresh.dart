@@ -66,9 +66,12 @@ class DioRefreshInterceptor extends Interceptor {
     required this.onRefresh,
     required this.shouldRefresh,
     required this.authHeader,
-    this.shouldPreRefreshToken = false,
+    this.shouldPreRefreshToken = true,
     this.preExpiryDuration = 300,
-  });
+  }) : assert(
+  preExpiryDuration > 0,
+  'Pre-expiry duration must be greater than 0',
+  );
 
   /// Intercepts outgoing requests to add authorization headers.
   ///
@@ -76,38 +79,40 @@ class DioRefreshInterceptor extends Interceptor {
   /// token refresh process is completed. Then, it adds the necessary authentication
   /// headers using the [authHeader] callback.
   @override
-  Future<void> onRequest(
-    RequestOptions options,
-    RequestInterceptorHandler handler,
-  ) async {
-    if (!tokenManager.isPreExpiryRefreshing) {
+  Future<void> onRequest(RequestOptions options,
+      RequestInterceptorHandler handler,) async {
+    final header = authHeader(tokenManager.tokenStore);
+    final headers = {...options.headers, ...header};
+    options = options.copyWith(headers: headers);
+    if (tokenManager.tokenStore.accessToken != null) {
       final jwt = tokenManager.tokenStore.accessToken;
-      Map<String, dynamic> decodedToken = JwtDecoder.decode(jwt!);
-      if (decodedToken['exp'] != null) {
-        final expiry = DateTime.fromMillisecondsSinceEpoch(
-          decodedToken['exp'] * 1000,
-        );
-        final now = DateTime.now();
-        final diff = expiry.difference(now).inSeconds;
+      try {
+        Map<String, dynamic> decodedToken = JwtDecoder.decode(jwt!);
+        if (decodedToken['exp'] != null) {
+          final expiry = DateTime.fromMillisecondsSinceEpoch(
+            decodedToken['exp'] * 1000,
+          );
+          final now = DateTime.now();
+          final diff = expiry
+              .difference(now)
+              .inSeconds;
 
-        if (diff < preExpiryDuration) {
-          // No await here
-          tokenManager.isPreExpiryRefreshing = true;
-          try {
+          print("diff is: $diff");
+          final isRefreshing = tokenManager.isPreExpiryRefreshing.value ||
+              tokenManager.isRefreshing.value;
+          if (diff > 3000 && diff < 5000 && !isRefreshing) {
+            print("pre-refreshing token");
             _onRefresh(options);
-          } finally {
-            tokenManager.isPreExpiryRefreshing = false;
           }
         }
+      } catch (e) {
+        print(e);
       }
     }
 
     await _checkForRefreshToken();
 
-    final header = authHeader(tokenManager.tokenStore);
-    final headers = {...options.headers, ...header};
-
-    super.onRequest(options.copyWith(headers: headers), handler);
+    super.onRequest(options, handler);
   }
 
   /// Intercepts incoming responses to check if a refresh is in progress.
@@ -115,10 +120,8 @@ class DioRefreshInterceptor extends Interceptor {
   /// If a refresh process is active, it waits for the refresh to complete
   /// before proceeding. Otherwise, it passes the response to the next handler.
   @override
-  Future<void> onResponse(
-    Response response,
-    ResponseInterceptorHandler handler,
-  ) async {
+  Future<void> onResponse(Response response,
+      ResponseInterceptorHandler handler,) async {
     if (tokenManager.isRefreshing.value) {
       await _checkForRefreshToken();
     } else {
@@ -132,10 +135,8 @@ class DioRefreshInterceptor extends Interceptor {
   /// the interceptor triggers the `onRefresh` callback to obtain a new token
   /// and retries the original request with the updated token.
   @override
-  Future<void> onError(
-    DioException err,
-    ErrorInterceptorHandler handler,
-  ) async {
+  Future<void> onError(DioException err,
+      ErrorInterceptorHandler handler,) async {
     final request = err.requestOptions;
     final response = err.response;
 
@@ -144,11 +145,9 @@ class DioRefreshInterceptor extends Interceptor {
         await _checkForRefreshToken();
       } else {
         try {
-          tokenManager.isRefreshing.value = true;
-          await _onRefresh(request);
-          tokenManager.isRefreshing.value = false;
+          await _onRefresh(request, isHardRefresh: true);
         } on DioException catch (e) {
-          handler.next(e);
+          return handler.next(e);
         }
       }
 
@@ -218,10 +217,16 @@ class DioRefreshInterceptor extends Interceptor {
   ///
   /// The `_onRefresh` method creates a new `Dio` instance with the same options as the original request,
   /// calls the `onRefresh` callback to obtain a new token, and updates the `tokenManager` with the new token.
-  Future<void> _onRefresh(RequestOptions request) async {
+  Future<void> _onRefresh(RequestOptions request, {
+    bool isHardRefresh = false,
+  }) async {
+    if (isHardRefresh) {
+      tokenManager.isRefreshing.value = true;
+    }
+
+    tokenManager.isPreExpiryRefreshing.value = true;
     final headers = {...request.headers};
     headers.remove("content-length");
-
     final refreshDio = Dio(BaseOptions(
       sendTimeout: request.sendTimeout,
       receiveTimeout: request.receiveTimeout,
@@ -237,10 +242,15 @@ class DioRefreshInterceptor extends Interceptor {
       responseDecoder: request.responseDecoder,
       listFormat: request.listFormat,
     ));
-    final refreshResponse = await onRefresh(
-      refreshDio,
-      tokenManager.tokenStore,
-    );
-    tokenManager.setToken(refreshResponse);
+    try {
+      final refreshResponse = await onRefresh(
+        refreshDio,
+        tokenManager.tokenStore,
+      );
+      tokenManager.setToken(refreshResponse);
+    } finally {
+      tokenManager.isPreExpiryRefreshing.value = false;
+      tokenManager.isRefreshing.value = false;
+    }
   }
 }

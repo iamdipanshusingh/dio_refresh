@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio_refresh/dio_refresh.dart';
 import 'package:flutter/foundation.dart';
 
@@ -50,10 +52,12 @@ class TokenManager {
   final ValueNotifier<bool> _isRefreshing = ValueNotifier(false);
 
   /// Indicates if a pre-expiry refresh is in progress.
-  bool isPreExpiryRefreshing = false;
+  final ValueNotifier<bool> isPreExpiryRefreshing = ValueNotifier(false);
 
   /// Provides access to the `ValueNotifier` indicating whether a refresh is in progress.
   ValueNotifier<bool> get isRefreshing => _isRefreshing;
+
+  Timer? preExpiryRefreshTimer;
 
   /// Updates the stored tokens with a new `TokenStore`.
   ///
