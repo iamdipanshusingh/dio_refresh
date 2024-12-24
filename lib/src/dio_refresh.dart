@@ -141,6 +141,7 @@ class DioRefreshInterceptor extends Interceptor {
           tokenManager.setToken(refreshResponse);
           tokenManager.isRefreshing.value = false;
         } on DioException catch (e) {
+          tokenManager.isRefreshing.value = false;
           handler.next(e);
         }
       }
