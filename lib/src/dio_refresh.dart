@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
@@ -79,22 +80,6 @@ class DioRefreshInterceptor extends Interceptor {
     super.onRequest(options.copyWith(headers: headers), handler);
   }
 
-  /// Intercepts incoming responses to check if a refresh is in progress.
-  ///
-  /// If a refresh process is active, it waits for the refresh to complete
-  /// before proceeding. Otherwise, it passes the response to the next handler.
-  @override
-  Future<void> onResponse(
-    Response response,
-    ResponseInterceptorHandler handler,
-  ) async {
-    if (tokenManager.isRefreshing.value) {
-      await _checkForRefreshToken();
-    } else {
-      handler.next(response);
-    }
-  }
-
   /// Intercepts errors to determine if a token refresh is needed.
   ///
   /// When an error response matches the [shouldRefresh] condition (e.g., 401),
@@ -116,7 +101,7 @@ class DioRefreshInterceptor extends Interceptor {
           tokenManager.isRefreshing.value = true;
 
           final headers = {...request.headers};
-          headers.remove("content-length");
+          headers.remove(HttpHeaders.contentLengthHeader);
 
           final refreshDio = Dio(BaseOptions(
             sendTimeout: request.sendTimeout,
@@ -140,9 +125,9 @@ class DioRefreshInterceptor extends Interceptor {
 
           tokenManager.setToken(refreshResponse);
           tokenManager.isRefreshing.value = false;
-        } on DioException catch (e) {
+        } catch (e) {
           tokenManager.isRefreshing.value = false;
-          handler.next(e);
+          handler.next(err);
         }
       }
 
