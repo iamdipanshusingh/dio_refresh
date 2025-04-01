@@ -111,6 +111,7 @@ print(tokenManager.accessToken);
     - `authHeader`: Callback to generate authorization headers.
     - `shouldRefresh`: Callback to determine if a refresh is needed.
     - `onRefresh`: Callback to handle the refresh logic and return a new `TokenStore`.
+    - `isTokenValid`: Optional callback to validate if a token is still valid.
 
 ### `TokenManager`
 
@@ -128,6 +129,34 @@ print(tokenManager.accessToken);
     - Determines if a token refresh is required.
 - **`TokenHeaderCallback`**: `Map<String, String> Function(TokenStore)`
     - Generates authorization headers for requests.
+- **`IsTokenValidCallback`**: `bool Function(String)`
+    - Validates if a token is still valid.
+    - Default implementation checks if the JWT token is not expired.
+    - Called if [shouldRefresh] returns `true`.
+    - Can be customized to implement different token validation strategies.
+
+### Example with Custom Token Validation
+
+```dart
+final dio = Dio();
+dio.interceptors.add(DioRefreshInterceptor(
+  tokenManager: tokenManager,
+  onRefresh: onRefresh,
+  shouldRefresh: shouldRefresh,
+  authHeader: authHeader,
+  isTokenValid: (token) {
+    // Implement custom token validation logic
+    try {
+      final decodedToken = JwtDecoder.decode(token);
+      // Add additional validation checks here
+      return !JwtDecoder.isExpired(token) && 
+             decodedToken['custom_claim'] == 'expected_value';
+    } catch (_) {
+      return false;
+    }
+  },
+));
+```
 
 ## Contributing
 
