@@ -152,7 +152,8 @@ class DioRefreshInterceptor extends Interceptor {
         final res = await dio.request(
           request.path,
           cancelToken: request.cancelToken,
-          data: request.data,
+          // Clone FormData to avoid an error about submitting it twice.
+          data: request.data is FormData ? request.data.clone() : request.data,
           onReceiveProgress: request.onReceiveProgress,
           onSendProgress: request.onSendProgress,
           queryParameters: request.queryParameters,
