@@ -62,3 +62,21 @@ typedef ShouldRefreshCallback = bool Function(Response?);
 /// }
 /// ```
 typedef TokenHeaderCallback = Map<String, String> Function(TokenStore);
+
+/// A callback function to check whether a token is valid.
+///
+/// This function is called if there is an access token present in the [TokenStore]
+/// and the [OnRefreshCallback] indicates that a token refresh is required.
+///
+/// The default implementation checks if the access token is not expired.
+///
+/// Example:
+/// ```dart
+/// bool isValidToken(String accessToken) {
+///   try {
+///     return !JwtDecoder.isExpired(accessToken);
+///   } catch (_) {}
+///   return false;
+/// }
+/// ```
+typedef TokenIsValidCallback = bool Function(String);
