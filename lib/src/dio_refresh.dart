@@ -57,22 +57,22 @@ class DioRefreshInterceptor extends Interceptor {
   /// This is called if [shouldRefresh] returns `true`.
   /// If not specified, the default is to check that the token can be decoded
   /// and has not expired.
-  late final TokenIsValidCallback tokenIsValid;
+  late final IsTokenValidCallback isTokenValid;
 
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
   /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
   /// callback to manage the refresh process, a [shouldRefresh] callback to determine when
   /// to refresh, and an [authHeader] callback to provide the necessary authentication headers.
-  /// An optional [tokenIsValid] callback can be provided to customize the token validation process.
+  /// An optional [isTokenValid] callback can be provided to customize the token validation process.
   DioRefreshInterceptor({
     required this.tokenManager,
     required this.onRefresh,
     required this.shouldRefresh,
     required this.authHeader,
-    TokenIsValidCallback? tokenIsValid,
+    IsTokenValidCallback? isTokenValid,
   }) {
-    this.tokenIsValid = tokenIsValid?? _isAccessTokenValid;
+    this.isTokenValid = isTokenValid ?? _isAccessTokenValid;
   }
 
   /// Intercepts outgoing requests to add authorization headers.
@@ -111,7 +111,7 @@ class DioRefreshInterceptor extends Interceptor {
         await _checkForRefreshToken();
       } else {
         await synchronized(() async {
-          bool isAccessTokenValid = tokenIsValid(tokenManager.accessToken!);
+          bool isAccessTokenValid = isTokenValid(tokenManager.accessToken!);
           if (!isAccessTokenValid) {
             try {
               tokenManager.isRefreshing.value = true;
@@ -211,7 +211,7 @@ class DioRefreshInterceptor extends Interceptor {
     return completer.future;
   }
 
-  /// The default callback for the [TokenIsValidCallback].
+  /// The default callback for the [IsTokenValidCallback].
   ///
   /// The token is valid if it can be decoded and the expiration time has not passed.
   bool _isAccessTokenValid(String accessToken) {

@@ -72,11 +72,11 @@ typedef TokenHeaderCallback = Map<String, String> Function(TokenStore);
 ///
 /// Example:
 /// ```dart
-/// bool isValidToken(String accessToken) {
+/// bool isTokenValid(String accessToken) {
 ///   try {
 ///     return !JwtDecoder.isExpired(accessToken);
 ///   } catch (_) {}
 ///   return false;
 /// }
 /// ```
-typedef TokenIsValidCallback = bool Function(String);
+typedef IsTokenValidCallback = bool Function(String);
