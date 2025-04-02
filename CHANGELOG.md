@@ -1,4 +1,9 @@
-## 1.0.3
+## 1.0.4
+
+* Fixed form data being submitted twice error on request retry
+* Added custom token validation callback
+
+* ## 1.0.3
 
 * Fixed error handling for `isRefreshing` deadlock
 * Fixed `onRefresh` being called multiple times simultaneously
