@@ -112,6 +112,7 @@ print(tokenManager.accessToken);
     - `shouldRefresh`: Callback to determine if a refresh is needed.
     - `onRefresh`: Callback to handle the refresh logic and return a new `TokenStore`.
     - `isTokenValid`: Optional callback to validate if a token is still valid.
+    - `retryInterceptors`: Optional list of interceptors to be added to the `Dio` instance used for retrying requests. This is useful for adding logging or other custom interceptors to the retry mechanism.
 
 ### `TokenManager`
 
@@ -155,6 +156,49 @@ dio.interceptors.add(DioRefreshInterceptor(
       return false;
     }
   },
+));
+```
+
+### Example with `retryInterceptors`
+
+You can provide a list of custom interceptors that will be added to the `Dio` instance responsible for retrying the request after a successful token refresh. This is particularly useful for logging the retry attempts.
+
+First, create a logger interceptor. For example, a simple `CustomLogInterceptor`:
+
+```dart
+import 'package:dio/dio.dart';
+
+class CustomLogInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    print('Retrying request to: ${options.uri}');
+    super.onRequest(options, handler);
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    print('Retry successful with status code: ${response.statusCode}');
+    super.onResponse(response, handler);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    print('Retry failed with error: $err');
+    super.onError(err, handler);
+  }
+}
+```
+
+Then, pass an instance of this interceptor to `DioRefreshInterceptor`:
+
+```dart
+final dio = Dio();
+dio.interceptors.add(DioRefreshInterceptor(
+  tokenManager: tokenManager,
+  onRefresh: onRefresh,
+  shouldRefresh: shouldRefresh,
+  authHeader: authHeader,
+  retryInterceptors: [CustomLogInterceptor()],
 ));
 ```
 
