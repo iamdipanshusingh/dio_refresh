@@ -56,6 +56,9 @@ class DioRefreshInterceptor extends Interceptor {
   ///
   /// This allows you to add custom interceptors, such as for logging, to the `Dio` instance
   /// that handles the request retry process.
+  ///
+  /// **Note:** Do not add another `DioRefreshInterceptor` to this list, as it may cause
+  /// an infinite loop. An assertion is in place to prevent this during development.
   final List<Interceptor>? retryInterceptors;
 
   /// An optional callback to check if a token is valid.
@@ -79,6 +82,10 @@ class DioRefreshInterceptor extends Interceptor {
     this.retryInterceptors,
     IsTokenValidCallback? isTokenValid,
   }) {
+    assert(
+      retryInterceptors?.any((i) => i is DioRefreshInterceptor) != true,
+      'Cannot add a DioRefreshInterceptor to the retryInterceptors, as it may cause an infinite loop.',
+    );
     this.isTokenValid = isTokenValid ?? _isAccessTokenValid;
   }
 
