@@ -112,7 +112,7 @@ print(tokenManager.accessToken);
     - `shouldRefresh`: Callback to determine if a refresh is needed.
     - `onRefresh`: Callback to handle the refresh logic and return a new `TokenStore`.
     - `isTokenValid`: Optional callback to validate if a token is still valid.
-    - `retryInterceptors`: Optional list of interceptors to be added to the `Dio` instance used for retrying requests. This is useful for adding logging or other custom interceptors to the retry mechanism.
+    - `retryInterceptors`: Optional list of interceptors to be added to the `Dio` instance used for retrying requests. This is useful for adding logging or other custom interceptors to the retry mechanism. **Note:** Do not add another `DioRefreshInterceptor` to this list, as it may cause an infinite loop.
 
 ### `TokenManager`
 
@@ -162,6 +162,8 @@ dio.interceptors.add(DioRefreshInterceptor(
 ### Example with `retryInterceptors`
 
 You can provide a list of custom interceptors that will be added to the `Dio` instance responsible for retrying the request after a successful token refresh. This is particularly useful for logging the retry attempts.
+
+**Important:** Do not add an instance of `DioRefreshInterceptor` itself to the `retryInterceptors` list. Doing so may create an infinite loop if the token refresh request also fails. The constructor includes an assertion to prevent this in debug mode.
 
 First, create a logger interceptor. For example, a simple `CustomLogInterceptor`:
 
