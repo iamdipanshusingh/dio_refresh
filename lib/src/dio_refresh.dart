@@ -52,6 +52,15 @@ class DioRefreshInterceptor extends Interceptor {
   /// headers). These headers are added to the request before it is sent.
   final TokenHeaderCallback authHeader;
 
+  /// A list of interceptors to be added to the `Dio` instance used for retrying requests.
+  ///
+  /// This allows you to add custom interceptors, such as for logging, to the `Dio` instance
+  /// that handles the request retry process.
+  ///
+  /// **Note:** Do not add another `DioRefreshInterceptor` to this list, as it may cause
+  /// an infinite loop. An assertion is in place to prevent this during development.
+  final List<Interceptor>? retryInterceptors;
+
   /// An optional callback to check if a token is valid.
   ///
   /// This is called if [shouldRefresh] returns `true`.
@@ -70,8 +79,13 @@ class DioRefreshInterceptor extends Interceptor {
     required this.onRefresh,
     required this.shouldRefresh,
     required this.authHeader,
+    this.retryInterceptors,
     IsTokenValidCallback? isTokenValid,
   }) {
+    assert(
+      retryInterceptors?.any((i) => i is DioRefreshInterceptor) != true,
+      'Cannot add a DioRefreshInterceptor to the retryInterceptors, as it may cause an infinite loop.',
+    );
     this.isTokenValid = isTokenValid ?? _isAccessTokenValid;
   }
 
@@ -154,6 +168,9 @@ class DioRefreshInterceptor extends Interceptor {
         request.headers = {...request.headers, ...header};
 
         final dio = Dio(BaseOptions(baseUrl: request.baseUrl));
+        if (retryInterceptors != null) {
+          dio.interceptors.addAll(retryInterceptors!);
+        }
         final res = await dio.request(
           request.path,
           cancelToken: request.cancelToken,
