@@ -24,7 +24,7 @@ import 'package:dio_refresh/dio_refresh.dart';
 ///   );
 /// }
 /// ```
-typedef OnRefreshCallback = Future<TokenStore> Function(Dio, TokenStore);
+typedef OnRefreshCallback = Future<TokenStore> Function(Dio dio, TokenStore tokenStore);
 
 /// A callback function that determines whether a response should trigger a token refresh.
 ///
@@ -41,7 +41,7 @@ typedef OnRefreshCallback = Future<TokenStore> Function(Dio, TokenStore);
 ///   return response?.statusCode == 401 || response?.statusCode == 403;
 /// }
 /// ```
-typedef ShouldRefreshCallback = bool Function(Response?);
+typedef ShouldRefreshCallback = bool Function(Response? response);
 
 /// A callback function that generates the authorization headers for API requests.
 ///
@@ -61,7 +61,7 @@ typedef ShouldRefreshCallback = bool Function(Response?);
 ///   return {};
 /// }
 /// ```
-typedef TokenHeaderCallback = Map<String, String> Function(TokenStore);
+typedef TokenHeaderCallback = Map<String, String> Function(TokenStore tokenStore);
 
 /// A callback function to check whether a token is valid.
 ///
@@ -79,4 +79,4 @@ typedef TokenHeaderCallback = Map<String, String> Function(TokenStore);
 ///   return false;
 /// }
 /// ```
-typedef IsTokenValidCallback = bool Function(String);
+typedef IsTokenValidCallback = bool Function(String token);
