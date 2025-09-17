@@ -1,3 +1,7 @@
+## 1.0.5
+
+* Added retry interceptors
+
 ## 1.0.4
 
 * Fixed form data being submitted twice error on request retry
