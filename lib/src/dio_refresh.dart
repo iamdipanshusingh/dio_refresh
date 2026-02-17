@@ -119,8 +119,9 @@ class DioRefreshInterceptor extends Interceptor {
   ) async {
     final request = err.requestOptions;
     final response = err.response;
-    bool shouldRefreshToken =
-        shouldRefresh(response) || !isTokenValid(tokenManager.accessToken!);
+    bool shouldRefreshToken = shouldRefresh(response) ||
+        (tokenManager.accessToken != null &&
+            !isTokenValid(tokenManager.accessToken!));
 
     if (tokenManager.accessToken != null && shouldRefreshToken) {
       if (tokenManager.isRefreshing.value) {
