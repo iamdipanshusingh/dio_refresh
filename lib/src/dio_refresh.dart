@@ -119,46 +119,45 @@ class DioRefreshInterceptor extends Interceptor {
   ) async {
     final request = err.requestOptions;
     final response = err.response;
+    bool isAccessTokenValid = isTokenValid(tokenManager.accessToken!);
+    bool shouldRefreshToken = shouldRefresh(response) || !isAccessTokenValid;
 
-    if (tokenManager.accessToken != null && shouldRefresh(response)) {
+    if (tokenManager.accessToken != null && shouldRefreshToken) {
       if (tokenManager.isRefreshing.value) {
         await _checkForRefreshToken();
       } else {
         await synchronized(() async {
-          bool isAccessTokenValid = isTokenValid(tokenManager.accessToken!);
-          if (!isAccessTokenValid) {
-            try {
-              tokenManager.isRefreshing.value = true;
+          try {
+            tokenManager.isRefreshing.value = true;
 
-              final headers = {...request.headers};
-              headers.remove(HttpHeaders.contentLengthHeader);
+            final headers = {...request.headers};
+            headers.remove(HttpHeaders.contentLengthHeader);
 
-              final refreshDio = Dio(BaseOptions(
-                sendTimeout: request.sendTimeout,
-                receiveTimeout: request.receiveTimeout,
-                extra: request.extra,
-                headers: headers,
-                responseType: request.responseType,
-                contentType: request.contentType,
-                validateStatus: request.validateStatus,
-                receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-                followRedirects: request.followRedirects,
-                maxRedirects: request.maxRedirects,
-                requestEncoder: request.requestEncoder,
-                responseDecoder: request.responseDecoder,
-                listFormat: request.listFormat,
-              ));
-              final refreshResponse = await onRefresh(
-                refreshDio,
-                tokenManager.tokenStore,
-              );
+            final refreshDio = Dio(BaseOptions(
+              sendTimeout: request.sendTimeout,
+              receiveTimeout: request.receiveTimeout,
+              extra: request.extra,
+              headers: headers,
+              responseType: request.responseType,
+              contentType: request.contentType,
+              validateStatus: request.validateStatus,
+              receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+              followRedirects: request.followRedirects,
+              maxRedirects: request.maxRedirects,
+              requestEncoder: request.requestEncoder,
+              responseDecoder: request.responseDecoder,
+              listFormat: request.listFormat,
+            ));
+            final refreshResponse = await onRefresh(
+              refreshDio,
+              tokenManager.tokenStore,
+            );
 
-              tokenManager.setToken(refreshResponse);
-              tokenManager.isRefreshing.value = false;
-            } catch (e) {
-              tokenManager.isRefreshing.value = false;
-              handler.next(err);
-            }
+            tokenManager.setToken(refreshResponse);
+            tokenManager.isRefreshing.value = false;
+          } catch (e) {
+            tokenManager.isRefreshing.value = false;
+            handler.next(err);
           }
         });
       }
