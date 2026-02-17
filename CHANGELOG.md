@@ -1,3 +1,9 @@
+# 1.0.6
+
+* Fix: Refresh is now triggered when either the server requests it (shouldRefresh) or the token is
+  locally expired. Previously both conditions were required, causing refresh to be skipped in
+  revoked-token scenarios
+
 ## 1.0.5
 
 * Added retry interceptors
