@@ -68,6 +68,8 @@ class DioRefreshInterceptor extends Interceptor {
   /// and has not expired.
   late final IsTokenValidCallback isTokenValid;
 
+  late final OnRefreshFailedCallback? onRefreshFailedCallback;
+
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
   /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
@@ -79,6 +81,7 @@ class DioRefreshInterceptor extends Interceptor {
     required this.onRefresh,
     required this.shouldRefresh,
     required this.authHeader,
+    this.onRefreshFailedCallback,
     this.retryInterceptors,
     IsTokenValidCallback? isTokenValid,
   }) {
@@ -158,6 +161,7 @@ class DioRefreshInterceptor extends Interceptor {
             tokenManager.isRefreshing.value = false;
           } catch (e) {
             tokenManager.isRefreshing.value = false;
+            onRefreshFailedCallback?.call(e);
             handler.next(err);
           }
         });

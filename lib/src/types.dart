@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
 
@@ -80,3 +82,5 @@ typedef TokenHeaderCallback = Map<String, String> Function(TokenStore tokenStore
 /// }
 /// ```
 typedef IsTokenValidCallback = bool Function(String token);
+
+typedef OnRefreshFailedCallback = void Function(dynamic error);
