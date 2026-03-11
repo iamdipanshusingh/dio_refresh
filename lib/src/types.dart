@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
 
@@ -26,7 +24,10 @@ import 'package:dio_refresh/dio_refresh.dart';
 ///   );
 /// }
 /// ```
-typedef OnRefreshCallback = Future<TokenStore> Function(Dio dio, TokenStore tokenStore);
+typedef OnRefreshCallback = Future<TokenStore> Function(
+  Dio dio,
+  TokenStore tokenStore,
+);
 
 /// A callback function that determines whether a response should trigger a token refresh.
 ///
@@ -63,7 +64,9 @@ typedef ShouldRefreshCallback = bool Function(Response? response);
 ///   return {};
 /// }
 /// ```
-typedef TokenHeaderCallback = Map<String, String> Function(TokenStore tokenStore);
+typedef TokenHeaderCallback = Map<String, String> Function(
+  TokenStore tokenStore,
+);
 
 /// A callback function to check whether a token is valid.
 ///
