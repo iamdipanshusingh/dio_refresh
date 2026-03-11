@@ -24,7 +24,10 @@ import 'package:dio_refresh/dio_refresh.dart';
 ///   );
 /// }
 /// ```
-typedef OnRefreshCallback = Future<TokenStore> Function(Dio dio, TokenStore tokenStore);
+typedef OnRefreshCallback = Future<TokenStore> Function(
+  Dio dio,
+  TokenStore tokenStore,
+);
 
 /// A callback function that determines whether a response should trigger a token refresh.
 ///
@@ -61,7 +64,9 @@ typedef ShouldRefreshCallback = bool Function(Response? response);
 ///   return {};
 /// }
 /// ```
-typedef TokenHeaderCallback = Map<String, String> Function(TokenStore tokenStore);
+typedef TokenHeaderCallback = Map<String, String> Function(
+  TokenStore tokenStore,
+);
 
 /// A callback function to check whether a token is valid.
 ///
@@ -80,3 +85,21 @@ typedef TokenHeaderCallback = Map<String, String> Function(TokenStore tokenStore
 /// }
 /// ```
 typedef IsTokenValidCallback = bool Function(String token);
+
+/// A callback invoked when the refresh flow fails.
+///
+/// This function is called when [OnRefreshCallback] throws during token refresh.
+/// It receives the thrown error object so callers can log, report, or trigger
+/// side effects such as logging out the current user.
+///
+/// The interceptor still forwards the original request error after invoking this
+/// callback, so this hook is intended for side effects rather than recovery.
+///
+/// Example:
+/// ```dart
+/// void onRefreshFailed(dynamic error) {
+///   debugPrint('Token refresh failed: $error');
+///   // Optionally clear session or navigate to login.
+/// }
+/// ```
+typedef OnRefreshFailedCallback = void Function(dynamic error);

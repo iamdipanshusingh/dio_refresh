@@ -1,4 +1,8 @@
-# 1.0.6
+## 1.0.7
+
+* Added support for providing an `OnRefreshFailedCallback` to handle refresh failures
+
+## 1.0.6
 
 * Fix: Refresh is now triggered when either the server requests it (shouldRefresh) or the token is
   locally expired. Previously both conditions were required, causing refresh to be skipped in

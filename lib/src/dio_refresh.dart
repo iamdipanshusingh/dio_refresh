@@ -68,17 +68,26 @@ class DioRefreshInterceptor extends Interceptor {
   /// and has not expired.
   late final IsTokenValidCallback isTokenValid;
 
+  /// Optional callback invoked when [onRefresh] throws.
+  ///
+  /// This can be used to log refresh failures or trigger cleanup (for example,
+  /// clearing local session state). The original [DioException] is still passed
+  /// forward to Dio's error chain after this callback is executed.
+  late final OnRefreshFailedCallback? onRefreshFailedCallback;
+
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
   /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
   /// callback to manage the refresh process, a [shouldRefresh] callback to determine when
   /// to refresh, and an [authHeader] callback to provide the necessary authentication headers.
   /// An optional [isTokenValid] callback can be provided to customize the token validation process.
+  /// Use [onRefreshFailedCallback] to handle side effects when refresh throws.
   DioRefreshInterceptor({
     required this.tokenManager,
     required this.onRefresh,
     required this.shouldRefresh,
     required this.authHeader,
+    this.onRefreshFailedCallback,
     this.retryInterceptors,
     IsTokenValidCallback? isTokenValid,
   }) {
@@ -158,6 +167,7 @@ class DioRefreshInterceptor extends Interceptor {
             tokenManager.isRefreshing.value = false;
           } catch (e) {
             tokenManager.isRefreshing.value = false;
+            onRefreshFailedCallback?.call(e);
             handler.next(err);
           }
         });
