@@ -133,6 +133,7 @@ class DioRefreshInterceptor extends Interceptor {
             !isTokenValid(tokenManager.accessToken!));
 
     if (tokenManager.accessToken != null && shouldRefreshToken) {
+      bool refreshFailed = false;
       if (tokenManager.isRefreshing.value) {
         await _checkForRefreshToken();
       } else {
@@ -168,9 +169,14 @@ class DioRefreshInterceptor extends Interceptor {
           } catch (e) {
             tokenManager.isRefreshing.value = false;
             onRefreshFailedCallback?.call(e);
-            handler.next(err);
+            refreshFailed = true;
           }
         });
+      }
+
+      if (refreshFailed) {
+        handler.next(err);
+        return;
       }
 
       try {

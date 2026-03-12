@@ -1,3 +1,7 @@
+## 1.0.8
+
+* Fixed `Bad state: handler already called` error when token refresh fails — handler was being called twice due to fall-through after the synchronized block
+
 ## 1.0.7
 
 * Added support for providing an `OnRefreshFailedCallback` to handle refresh failures
