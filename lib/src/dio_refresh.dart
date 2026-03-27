@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
+import 'package:easy_debounce/easy_throttle.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
-import 'package:synchronized/extension.dart';
 
 /// A custom `Dio` interceptor that handles token refresh logic for authenticated API requests.
 ///
@@ -75,6 +75,13 @@ class DioRefreshInterceptor extends Interceptor {
   /// forward to Dio's error chain after this callback is executed.
   late final OnRefreshFailedCallback? onRefreshFailedCallback;
 
+  /// The duration to throttle token refresh calls.
+  ///
+  /// This prevents duplicate refresh requests when multiple failing requests arrive
+  /// at nearly the same time. Typical values are in the low hundreds of
+  /// milliseconds (for example, `300-800ms`).
+  final Duration throttleDuration;
+
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
   /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
@@ -90,6 +97,7 @@ class DioRefreshInterceptor extends Interceptor {
     this.onRefreshFailedCallback,
     this.retryInterceptors,
     IsTokenValidCallback? isTokenValid,
+    this.throttleDuration = const Duration(milliseconds: 800),
   }) {
     assert(
       retryInterceptors?.any((i) => i is DioRefreshInterceptor) != true,
@@ -137,41 +145,50 @@ class DioRefreshInterceptor extends Interceptor {
       if (tokenManager.isRefreshing.value) {
         await _checkForRefreshToken();
       } else {
-        await synchronized(() async {
-          try {
-            tokenManager.isRefreshing.value = true;
+        // Allow only one refresh call within the throttle window.
+        final isThrottled = EasyThrottle.throttle(
+          "dio_refresh.refresh_throttle",
+          throttleDuration,
+          () async {
+            try {
+              tokenManager.isRefreshing.value = true;
 
-            final headers = {...request.headers};
-            headers.remove(HttpHeaders.contentLengthHeader);
+              final headers = {...request.headers};
+              headers.remove(HttpHeaders.contentLengthHeader);
 
-            final refreshDio = Dio(BaseOptions(
-              sendTimeout: request.sendTimeout,
-              receiveTimeout: request.receiveTimeout,
-              extra: request.extra,
-              headers: headers,
-              responseType: request.responseType,
-              contentType: request.contentType,
-              validateStatus: request.validateStatus,
-              receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-              followRedirects: request.followRedirects,
-              maxRedirects: request.maxRedirects,
-              requestEncoder: request.requestEncoder,
-              responseDecoder: request.responseDecoder,
-              listFormat: request.listFormat,
-            ));
-            final refreshResponse = await onRefresh(
-              refreshDio,
-              tokenManager.tokenStore,
-            );
+              final refreshDio = Dio(BaseOptions(
+                sendTimeout: request.sendTimeout,
+                receiveTimeout: request.receiveTimeout,
+                extra: request.extra,
+                headers: headers,
+                responseType: request.responseType,
+                contentType: request.contentType,
+                validateStatus: request.validateStatus,
+                receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+                followRedirects: request.followRedirects,
+                maxRedirects: request.maxRedirects,
+                requestEncoder: request.requestEncoder,
+                responseDecoder: request.responseDecoder,
+                listFormat: request.listFormat,
+              ));
+              final refreshResponse = await onRefresh(
+                refreshDio,
+                tokenManager.tokenStore,
+              );
 
-            tokenManager.setToken(refreshResponse);
-            tokenManager.isRefreshing.value = false;
-          } catch (e) {
-            tokenManager.isRefreshing.value = false;
-            onRefreshFailedCallback?.call(e);
-            refreshFailed = true;
-          }
-        });
+              tokenManager.setToken(refreshResponse);
+              tokenManager.isRefreshing.value = false;
+            } catch (e) {
+              tokenManager.isRefreshing.value = false;
+              onRefreshFailedCallback?.call(e);
+              refreshFailed = true;
+            }
+          },
+        );
+
+        if (isThrottled) {
+          await _checkForRefreshToken();
+        }
       }
 
       if (refreshFailed) {

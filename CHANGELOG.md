@@ -1,3 +1,8 @@
+## 1.1.0
+
+* Fixed `onRefresh` being called multiple times simultaneously, resulting in future API failure
+* Added configurable `throttleDuration` to control token refresh throttling window (default: `800ms`)
+
 ## 1.0.8
 
 * Fixed `Bad state: handler already called` error when token refresh fails — handler was being called twice due to fall-through after the synchronized block

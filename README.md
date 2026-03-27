@@ -19,10 +19,12 @@ Add the following dependency to your `pubspec.yaml` file:
 ```yaml
 dependencies:
   dio: ^5.0.0
-  dio_refresh: ^1.0.0
+  dio_refresh: ^1.1.0 # recommended
   flutter:
     sdk: flutter
 ```
+
+Recommended version: `1.1.0`.
 
 Then, run:
 
@@ -39,6 +41,7 @@ To use the `DioRefreshInterceptor`, you'll need to define the following callback
 - `OnRefreshCallback`: Handles the logic for refreshing the access token.
 - `ShouldRefreshCallback`: Determines whether a response requires a token refresh.
 - `TokenHeaderCallback`: Generates headers with the access token.
+- `IsTokenValidCallback`: A callback function to check whether a token is valid.
 - `OnRefreshFailedCallback` (optional): Handles refresh failures for side effects such as logging out the user.
 
 ### Example
@@ -85,6 +88,8 @@ void main() {
       // Handle refresh failure side effects, such as clearing session state.
       print('Token refresh failed: $error');
     },
+    // Optional: throttle duplicate refresh attempts from concurrent failures.
+    throttleDuration: const Duration(milliseconds: 800),
   ));
 }
 ```
@@ -119,6 +124,7 @@ print(tokenManager.accessToken);
     - `onRefreshFailedCallback`: Optional callback invoked when `onRefresh` throws.
     - `isTokenValid`: Optional callback to validate if a token is still valid.
     - `retryInterceptors`: Optional list of interceptors to be added to the `Dio` instance used for retrying requests. This is useful for adding logging or other custom interceptors to the retry mechanism. **Note:** Do not add another `DioRefreshInterceptor` to this list, as it may cause an infinite loop.
+    - `throttleDuration`: Optional duration for throttling refresh calls when many requests fail at the same time. Defaults to `Duration(milliseconds: 800)`. Typical values are `300-800ms`.
 
 ### `TokenManager`
 
