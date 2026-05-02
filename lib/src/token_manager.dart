@@ -1,5 +1,4 @@
 import 'package:dio_refresh/dio_refresh.dart';
-import 'package:flutter/foundation.dart';
 
 /// A singleton class to manage access and refresh tokens for authentication.
 ///
