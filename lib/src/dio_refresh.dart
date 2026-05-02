@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
-import 'package:easy_debounce/easy_throttle.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 
 /// A custom `Dio` interceptor that handles token refresh logic for authenticated API requests.
@@ -75,12 +74,12 @@ class DioRefreshInterceptor extends Interceptor {
   /// forward to Dio's error chain after this callback is executed.
   late final OnRefreshFailedCallback? onRefreshFailedCallback;
 
-  /// The duration to throttle token refresh calls.
+  /// The refresh work started from [onError], or `null` when idle.
   ///
-  /// This prevents duplicate refresh requests when multiple failing requests arrive
-  /// at nearly the same time. Typical values are in the low hundreds of
-  /// milliseconds (for example, `300-800ms`).
-  final Duration throttleDuration;
+  /// Multiple failing requests can enter [onError] at once; they all await this
+  /// same [Future] so only one [onRefresh] runs and the rest wait for it to finish.
+  /// Cleared to `null` after the refresh completes so a later failure can start a new cycle.
+  Future<void>? _refreshFuture;
 
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
@@ -97,7 +96,6 @@ class DioRefreshInterceptor extends Interceptor {
     this.onRefreshFailedCallback,
     this.retryInterceptors,
     IsTokenValidCallback? isTokenValid,
-    this.throttleDuration = const Duration(milliseconds: 800),
   }) {
     assert(
       retryInterceptors?.any((i) => i is DioRefreshInterceptor) != true,
@@ -108,7 +106,7 @@ class DioRefreshInterceptor extends Interceptor {
 
   /// Intercepts outgoing requests to add authorization headers.
   ///
-  /// Before each request is sent, `_checkForRefreshToken` ensures that any ongoing
+  /// Before each request is sent, `_refreshFuture` ensures that any ongoing
   /// token refresh process is completed. Then, it adds the necessary authentication
   /// headers using the [authHeader] callback.
   @override
@@ -116,7 +114,7 @@ class DioRefreshInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    await _checkForRefreshToken();
+    await _refreshFuture;
 
     final header = authHeader(tokenManager.tokenStore);
     final headers = {...options.headers, ...header};
@@ -142,53 +140,42 @@ class DioRefreshInterceptor extends Interceptor {
 
     if (tokenManager.accessToken != null && shouldRefreshToken) {
       bool refreshFailed = false;
-      if (tokenManager.isRefreshing.value) {
-        await _checkForRefreshToken();
+      if (_refreshFuture != null) {
+        await _refreshFuture;
       } else {
-        // Allow only one refresh call within the throttle window.
-        final isThrottled = EasyThrottle.throttle(
-          "dio_refresh.refresh_throttle",
-          throttleDuration,
-          () async {
-            try {
-              tokenManager.isRefreshing.value = true;
+        _refreshFuture = Future(() async {
+          try {
+            final headers = {...request.headers};
+            headers.remove(HttpHeaders.contentLengthHeader);
 
-              final headers = {...request.headers};
-              headers.remove(HttpHeaders.contentLengthHeader);
+            final refreshDio = Dio(BaseOptions(
+              sendTimeout: request.sendTimeout,
+              receiveTimeout: request.receiveTimeout,
+              extra: request.extra,
+              headers: headers,
+              responseType: request.responseType,
+              contentType: request.contentType,
+              validateStatus: request.validateStatus,
+              receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+              followRedirects: request.followRedirects,
+              maxRedirects: request.maxRedirects,
+              requestEncoder: request.requestEncoder,
+              responseDecoder: request.responseDecoder,
+              listFormat: request.listFormat,
+            ));
+            final refreshResponse = await onRefresh(
+              refreshDio,
+              tokenManager.tokenStore,
+            );
 
-              final refreshDio = Dio(BaseOptions(
-                sendTimeout: request.sendTimeout,
-                receiveTimeout: request.receiveTimeout,
-                extra: request.extra,
-                headers: headers,
-                responseType: request.responseType,
-                contentType: request.contentType,
-                validateStatus: request.validateStatus,
-                receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-                followRedirects: request.followRedirects,
-                maxRedirects: request.maxRedirects,
-                requestEncoder: request.requestEncoder,
-                responseDecoder: request.responseDecoder,
-                listFormat: request.listFormat,
-              ));
-              final refreshResponse = await onRefresh(
-                refreshDio,
-                tokenManager.tokenStore,
-              );
-
-              tokenManager.setToken(refreshResponse);
-              tokenManager.isRefreshing.value = false;
-            } catch (e) {
-              tokenManager.isRefreshing.value = false;
-              onRefreshFailedCallback?.call(e);
-              refreshFailed = true;
-            }
-          },
-        );
-
-        if (isThrottled) {
-          await _checkForRefreshToken();
-        }
+            tokenManager.setToken(refreshResponse);
+          } catch (e) {
+            onRefreshFailedCallback?.call(e);
+            refreshFailed = true;
+          }
+        });
+        await _refreshFuture;
+        _refreshFuture = null;
       }
 
       if (refreshFailed) {
@@ -236,30 +223,6 @@ class DioRefreshInterceptor extends Interceptor {
     } else {
       handler.next(err);
     }
-  }
-
-  /// A helper method to wait for any ongoing token refresh process to complete.
-  ///
-  /// The `_checkForRefreshToken` method creates a `Completer` that completes once
-  /// the `isRefreshing` state of the `tokenManager` changes to `false`, indicating
-  /// that the refresh process has finished.
-  Future<void> _checkForRefreshToken() {
-    Completer<void> completer = Completer();
-
-    void listener() {
-      if (!tokenManager.isRefreshing.value) {
-        completer.complete();
-        tokenManager.isRefreshing.removeListener(listener);
-      }
-    }
-
-    if (tokenManager.isRefreshing.value) {
-      tokenManager.isRefreshing.addListener(listener);
-    } else {
-      completer.complete();
-    }
-
-    return completer.future;
   }
 
   /// The default callback for the [IsTokenValidCallback].
