@@ -1,3 +1,10 @@
+## 1.2.0
+
+* **Breaking:** Removed time-based refresh throttling and the `throttleDuration` option added in 1.1.0. Upgrade by deleting any `throttleDuration` argument from your setup.
+* Refresh is serialized with an in-flight `Future` (`_refreshFuture`): the first failure starts `onRefresh`; any other concurrent `onError` handlers await that same future instead of starting another refresh.
+* Outgoing requests wait their turn: `onRequest` awaits `_refreshFuture` before applying `authHeader`, so new calls do not attach a stale token while a refresh is still running.
+* After the shared refresh completes, `_refreshFuture` is cleared so a later auth failure can start a new refresh cycle.
+
 ## 1.1.0
 
 * Fixed `onRefresh` being called multiple times simultaneously, resulting in future API failure

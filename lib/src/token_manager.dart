@@ -1,5 +1,4 @@
 import 'package:dio_refresh/dio_refresh.dart';
-import 'package:flutter/foundation.dart';
 
 /// A singleton class to manage access and refresh tokens for authentication.
 ///
@@ -43,15 +42,6 @@ class TokenManager {
         accessToken: _accessToken,
         refreshToken: _refreshToken,
       );
-
-  /// A `ValueNotifier` that tracks whether the refresh process is active.
-  ///
-  /// This is useful for observing the refresh state and triggering actions
-  /// when a refresh is in progress or has completed.
-  final ValueNotifier<bool> _isRefreshing = ValueNotifier(false);
-
-  /// Provides access to the `ValueNotifier` indicating whether a refresh is in progress.
-  ValueNotifier<bool> get isRefreshing => _isRefreshing;
 
   /// Updates the stored tokens with a new `TokenStore`.
   ///

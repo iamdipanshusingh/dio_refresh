@@ -88,8 +88,6 @@ void main() {
       // Handle refresh failure side effects, such as clearing session state.
       print('Token refresh failed: $error');
     },
-    // Optional: throttle duplicate refresh attempts from concurrent failures.
-    throttleDuration: const Duration(milliseconds: 800),
   ));
 }
 ```
@@ -124,7 +122,6 @@ print(tokenManager.accessToken);
     - `onRefreshFailedCallback`: Optional callback invoked when `onRefresh` throws.
     - `isTokenValid`: Optional callback to validate if a token is still valid.
     - `retryInterceptors`: Optional list of interceptors to be added to the `Dio` instance used for retrying requests. This is useful for adding logging or other custom interceptors to the retry mechanism. **Note:** Do not add another `DioRefreshInterceptor` to this list, as it may cause an infinite loop.
-    - `throttleDuration`: Optional duration for throttling refresh calls when many requests fail at the same time. Defaults to `Duration(milliseconds: 800)`. Typical values are `300-800ms`.
 
 ### `TokenManager`
 
@@ -132,7 +129,6 @@ print(tokenManager.accessToken);
     - `setToken(TokenStore tokenStore)`: Updates the stored access and refresh tokens.
     - `accessToken`: Returns the current access token.
     - `refreshToken`: Returns the current refresh token.
-    - `isRefreshing`: A `ValueNotifier` that indicates whether a refresh is in progress.
 
 ### `typedef` Callbacks
 
