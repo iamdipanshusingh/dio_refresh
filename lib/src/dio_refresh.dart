@@ -78,8 +78,18 @@ class DioRefreshInterceptor extends Interceptor {
   ///
   /// Multiple failing requests can enter [onError] at once; they all await this
   /// same [Future] so only one [onRefresh] runs and the rest wait for it to finish.
+  /// The future resolves to `true` when the refresh succeeded and `false` when it
+  /// failed, so every waiting request observes the same outcome.
   /// Cleared to `null` after the refresh completes so a later failure can start a new cycle.
-  Future<void>? _refreshFuture;
+  Future<bool>? _refreshFuture;
+
+  /// The key under which the access token used to build a request is stored in
+  /// [RequestOptions.extra].
+  ///
+  /// This lets [onError] detect whether the token has already been rotated since
+  /// the failing request was sent, so it can retry directly instead of triggering
+  /// a redundant refresh.
+  static const String _sentAccessTokenKey = '__dio_refresh_access_token__';
 
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
@@ -118,8 +128,12 @@ class DioRefreshInterceptor extends Interceptor {
 
     final header = authHeader(tokenManager.tokenStore);
     final headers = {...options.headers, ...header};
+    final extra = {
+      ...options.extra,
+      _sentAccessTokenKey: tokenManager.accessToken,
+    };
 
-    super.onRequest(options.copyWith(headers: headers), handler);
+    super.onRequest(options.copyWith(headers: headers, extra: extra), handler);
   }
 
   /// Intercepts errors to determine if a token refresh is needed.
@@ -139,48 +153,63 @@ class DioRefreshInterceptor extends Interceptor {
             !isTokenValid(tokenManager.accessToken!));
 
     if (tokenManager.accessToken != null && shouldRefreshToken) {
-      bool refreshFailed = false;
-      if (_refreshFuture != null) {
-        await _refreshFuture;
-      } else {
-        _refreshFuture = Future(() async {
-          try {
-            final headers = {...request.headers};
-            headers.remove(HttpHeaders.contentLengthHeader);
+      // The access token this request was sent with. If the current token no
+      // longer matches, another request already refreshed it while this one was
+      // in flight, so we can skip the refresh entirely and just retry.
+      final sentToken = request.extra[_sentAccessTokenKey] as String?;
+      final alreadyRefreshed =
+          sentToken != null && tokenManager.accessToken != sentToken;
 
-            final refreshDio = Dio(BaseOptions(
-              sendTimeout: request.sendTimeout,
-              receiveTimeout: request.receiveTimeout,
-              extra: request.extra,
-              headers: headers,
-              responseType: request.responseType,
-              contentType: request.contentType,
-              validateStatus: request.validateStatus,
-              receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-              followRedirects: request.followRedirects,
-              maxRedirects: request.maxRedirects,
-              requestEncoder: request.requestEncoder,
-              responseDecoder: request.responseDecoder,
-              listFormat: request.listFormat,
-            ));
-            final refreshResponse = await onRefresh(
-              refreshDio,
-              tokenManager.tokenStore,
-            );
-
-            tokenManager.setToken(refreshResponse);
-          } catch (e) {
-            onRefreshFailedCallback?.call(e);
-            refreshFailed = true;
+      if (!alreadyRefreshed) {
+        final inFlight = _refreshFuture;
+        if (inFlight != null) {
+          final refreshed = await inFlight;
+          if (!refreshed) {
+            handler.next(err);
+            return;
           }
-        });
-        await _refreshFuture;
-        _refreshFuture = null;
-      }
+        } else {
+          final refreshFuture = Future(() async {
+            try {
+              final headers = {...request.headers};
+              headers.remove(HttpHeaders.contentLengthHeader);
 
-      if (refreshFailed) {
-        handler.next(err);
-        return;
+              final refreshDio = Dio(BaseOptions(
+                sendTimeout: request.sendTimeout,
+                receiveTimeout: request.receiveTimeout,
+                extra: request.extra,
+                headers: headers,
+                responseType: request.responseType,
+                contentType: request.contentType,
+                validateStatus: request.validateStatus,
+                receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+                followRedirects: request.followRedirects,
+                maxRedirects: request.maxRedirects,
+                requestEncoder: request.requestEncoder,
+                responseDecoder: request.responseDecoder,
+                listFormat: request.listFormat,
+              ));
+              final refreshResponse = await onRefresh(
+                refreshDio,
+                tokenManager.tokenStore,
+              );
+
+              tokenManager.setToken(refreshResponse);
+              return true;
+            } catch (e) {
+              onRefreshFailedCallback?.call(e);
+              return false;
+            }
+          });
+          _refreshFuture = refreshFuture;
+          final refreshed = await refreshFuture;
+          _refreshFuture = null;
+
+          if (!refreshed) {
+            handler.next(err);
+            return;
+          }
+        }
       }
 
       try {
