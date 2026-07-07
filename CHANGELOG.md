@@ -1,3 +1,8 @@
+## 1.2.1
+
+* Fixed a race condition where requests already in flight with an expired token could each trigger a new `onRefresh` after an earlier refresh had already completed, causing duplicate refresh calls (and `401`/`503` failures with rotating refresh tokens). Each request now records the access token it was sent with and skips the refresh if the token has already been rotated, retrying directly instead.
+* Fixed refresh failures not propagating to concurrent requests: the in-flight refresh now resolves to a success/failure result that every waiting `onError` handler observes, so a failed refresh is forwarded to all of them instead of retrying with an invalid token.
+
 ## 1.2.0
 
 * **Breaking:** Removed time-based refresh throttling and the `throttleDuration` option added in 1.1.0. Upgrade by deleting any `throttleDuration` argument from your setup.

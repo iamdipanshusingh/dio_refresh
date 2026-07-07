@@ -19,12 +19,12 @@ Add the following dependency to your `pubspec.yaml` file:
 ```yaml
 dependencies:
   dio: ^5.0.0
-  dio_refresh: ^1.1.0 # recommended
+  dio_refresh: ^1.2.1 # recommended
   flutter:
     sdk: flutter
 ```
 
-Recommended version: `1.1.0`.
+Recommended version: `1.2.1`.
 
 Then, run:
 
