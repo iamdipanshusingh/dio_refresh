@@ -1,10 +1,12 @@
 import 'package:dio_refresh/dio_refresh.dart';
+import 'package:flutter/foundation.dart';
+import 'package:synchronized/synchronized.dart';
 
 /// A singleton class to manage access and refresh tokens for authentication.
 ///
 /// The `TokenManager` handles storing, retrieving, and updating access tokens
-/// and refresh tokens. It also provides a `ValueNotifier` to track the state
-/// of the token refresh process, enabling reactive behavior in Flutter apps.
+/// and refresh tokens. Refresh coordination is centralized here so concurrent
+/// failures across multiple `Dio` clients still share a single refresh.
 ///
 /// This class uses the singleton pattern to ensure a single instance throughout
 /// the application, providing a central point of access for token management.
@@ -18,10 +20,19 @@ import 'package:dio_refresh/dio_refresh.dart';
 /// ));
 /// print(tokenManager.accessToken);
 /// ```
-
 class TokenManager {
   String? _refreshToken;
   String? _accessToken;
+
+  /// Monotonically increases on every [setToken] call.
+  ///
+  /// Used by [DioRefreshInterceptor] to detect that tokens were rotated while
+  /// a request was in flight — even when the refreshed access token string is
+  /// identical to the previous one.
+  int _tokenGeneration = 0;
+
+  /// Shared lock so only one [onRefresh] runs at a time across all interceptors.
+  final Lock refreshLock = Lock();
 
   // Private constructor for the singleton instance.
   static final TokenManager _instance = TokenManager._internal();
@@ -36,6 +47,9 @@ class TokenManager {
 
   /// Returns the current access token.
   String? get accessToken => _accessToken;
+
+  /// Generation counter bumped whenever tokens are updated via [setToken].
+  int get tokenGeneration => _tokenGeneration;
 
   /// Retrieves the current tokens as a `TokenStore` object.
   TokenStore get tokenStore => TokenStore(
@@ -52,5 +66,14 @@ class TokenManager {
   void setToken(TokenStore tokenStore) {
     _accessToken = tokenStore.accessToken;
     _refreshToken = tokenStore.refreshToken;
+    _tokenGeneration++;
+  }
+
+  /// Test-only: reset singleton state between tests.
+  @visibleForTesting
+  void resetForTest() {
+    _accessToken = null;
+    _refreshToken = null;
+    _tokenGeneration = 0;
   }
 }
