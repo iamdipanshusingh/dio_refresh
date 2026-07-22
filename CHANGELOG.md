@@ -1,3 +1,13 @@
+## 1.2.3
+
+* Fixed a race where a request sent without an access token could still enter the
+  refresh/retry path after a later `TokenManager.setToken` (for example login, or
+  another client syncing the singleton). Refresh is now gated on the access token
+  captured at send time, not only the current `TokenManager` value.
+* Refresh Dio seeding now re-applies `authHeader` from the current `TokenStore`,
+  so the refresh call is not left tokenless when the failed request lacked auth
+  headers.
+
 ## 1.2.2
 
 * Concurrent 401s now share a single refresh via `Lock.synchronized` on `TokenManager`, so `onRefresh` runs only once even across multiple `Dio` / interceptor instances.

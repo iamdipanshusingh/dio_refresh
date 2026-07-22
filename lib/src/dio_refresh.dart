@@ -82,6 +82,14 @@ class DioRefreshInterceptor extends Interceptor {
   static const String _sentTokenGenerationKey =
       '__dio_refresh_token_generation__';
 
+  /// The key under which the access token used to build a request is stored in
+  /// [RequestOptions.extra].
+  ///
+  /// Refresh/retry is only attempted when this value was non-null at send time,
+  /// so a later [TokenManager.setToken] (login / another client) cannot open the
+  /// refresh gate for a request that left without auth headers.
+  static const String _sentAccessTokenKey = '__dio_refresh_access_token__';
+
   /// Creates an instance of `DioRefreshInterceptor`.
   ///
   /// The interceptor requires a [tokenManager] to handle the token state, an [onRefresh]
@@ -123,6 +131,7 @@ class DioRefreshInterceptor extends Interceptor {
     final extra = {
       ...options.extra,
       _sentTokenGenerationKey: tokenManager.tokenGeneration,
+      _sentAccessTokenKey: tokenManager.accessToken,
     };
 
     super.onRequest(options.copyWith(headers: headers, extra: extra), handler);
@@ -144,13 +153,22 @@ class DioRefreshInterceptor extends Interceptor {
   ) async {
     final request = err.requestOptions;
     final response = err.response;
+    // Access token this request was actually sent with (captured in onRequest).
+    // A later setToken on the singleton TokenManager must not cause an
+    // unauthenticated in-flight request to refresh/retry with empty auth headers.
+    final sentToken = request.extra[_sentAccessTokenKey] as String?;
+    final sentGeneration = request.extra[_sentTokenGenerationKey] as int?;
     bool shouldRefreshToken = shouldRefresh(response) ||
         (tokenManager.accessToken != null &&
             !isTokenValid(tokenManager.accessToken!));
+    // Only refresh/retry when THIS request left with an access token. Tokens
+    // appearing on TokenManager after send (login / another request's setToken)
+    // must not open the gate for a request that never had auth headers.
+    final shouldAttemptRefresh = sentToken != null &&
+        tokenManager.accessToken != null &&
+        shouldRefreshToken;
 
-    if (tokenManager.accessToken != null && shouldRefreshToken) {
-      final sentGeneration =
-          request.extra[_sentTokenGenerationKey] as int?;
+    if (shouldAttemptRefresh) {
       final alreadyRefreshed = sentGeneration != null &&
           tokenManager.tokenGeneration != sentGeneration;
 
@@ -164,7 +182,13 @@ class DioRefreshInterceptor extends Interceptor {
           }
 
           try {
-            final headers = {...request.headers};
+            // Prefer current TokenManager credentials over whatever was on the
+            // failed request, so refresh never goes out tokenless when tokens
+            // are available.
+            final headers = {
+              ...request.headers,
+              ...authHeader(tokenManager.tokenStore),
+            };
             headers.remove(HttpHeaders.contentLengthHeader);
 
             final refreshDio = Dio(BaseOptions(

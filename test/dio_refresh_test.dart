@@ -261,4 +261,126 @@ void main() {
     expect(late.statusCode, 200);
     expect(refreshCalls, 1);
   });
+
+  test('does not refresh or retry when request was sent without access token '
+      'but TokenManager gains tokens before onError', () async {
+    tokenManager.resetForTest();
+    tokenManager.setToken(TokenStore(
+      accessToken: null,
+      refreshToken: null,
+    ));
+
+    var refreshCalls = 0;
+    var retried = false;
+
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+    dio.interceptors.add(
+      DioRefreshInterceptor(
+        tokenManager: tokenManager,
+        shouldRefresh: (response) => response?.statusCode == 401,
+        isTokenValid: (_) => true,
+        authHeader: (store) {
+          if (store.accessToken == null) return {};
+          return {
+            'authorization': 'Bearer ${store.accessToken}',
+            'x-refresh-token': store.refreshToken ?? '',
+          };
+        },
+        retryInterceptors: [
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              retried = true;
+              handler.resolve(Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {'ok': true},
+              ));
+            },
+          ),
+        ],
+        onRefresh: (dio, store) async {
+          refreshCalls++;
+          return TokenStore(
+            accessToken: 'new-a',
+            refreshToken: 'new-r',
+          );
+        },
+      ),
+    );
+    dio.httpClientAdapter = _CallbackAdapter((options) {
+      // Login / another Network.request setToken while this call is in flight.
+      tokenManager.setToken(TokenStore(
+        accessToken: 'arrived-access',
+        refreshToken: 'arrived-refresh',
+      ));
+      return ResponseBody.fromString('unauthorized', 401);
+    });
+
+    await expectLater(dio.get('/x'), throwsA(isA<DioException>()));
+    expect(refreshCalls, 0);
+    expect(retried, isFalse);
+  });
+
+  test('refresh Dio receives authHeader even if failed request headers lack it',
+      () async {
+    late RequestOptions refreshRequest;
+
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+    dio.interceptors.add(
+      DioRefreshInterceptor(
+        tokenManager: tokenManager,
+        shouldRefresh: (response) => response?.statusCode == 401,
+        isTokenValid: (_) => true,
+        // Simulate a path where auth lands only via authHeader merge at refresh.
+        authHeader: (store) => {
+          'authorization': 'Bearer ${store.accessToken}',
+          'x-refresh-token': store.refreshToken ?? '',
+        },
+        retryInterceptors: [_OkRetryInterceptor()],
+        onRefresh: (refreshDio, store) async {
+          refreshDio.httpClientAdapter = _CallbackAdapter((options) {
+            refreshRequest = options;
+            return ResponseBody.fromString(
+              '{"ok":true}',
+              200,
+              headers: {
+                Headers.contentTypeHeader: ['application/json'],
+              },
+            );
+          });
+          await refreshDio.get('https://accounts.example.com/api/users/refresh');
+          return TokenStore(
+            accessToken: 'new-a',
+            refreshToken: 'new-r',
+          );
+        },
+      ),
+    );
+    dio.httpClientAdapter = _CallbackAdapter(
+      (_) => ResponseBody.fromString('unauthorized', 401),
+    );
+
+    await dio.get('/protected');
+
+    expect(refreshRequest.headers['authorization'], 'Bearer old-access');
+    expect(refreshRequest.headers['x-refresh-token'], 'old-refresh');
+  });
+}
+
+class _CallbackAdapter implements HttpClientAdapter {
+  _CallbackAdapter(this._onFetch);
+
+  final ResponseBody Function(RequestOptions options) _onFetch;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return _onFetch(options);
+  }
 }
