@@ -140,7 +140,7 @@ class DioRefreshInterceptor extends Interceptor {
 
     final accessToken = tokenManager.accessToken;
     if (accessToken != null && !isTokenValid(accessToken)) {
-      await _refreshTokens(options, tokenManager.tokenGeneration);
+      await _refreshToken(options, tokenManager.tokenGeneration);
     }
 
     final header = authHeader(tokenManager.tokenStore);
@@ -188,7 +188,7 @@ class DioRefreshInterceptor extends Interceptor {
           tokenManager.tokenGeneration != sentGeneration;
 
       if (!alreadyRefreshed) {
-        final refreshed = await _refreshTokens(request, sentGeneration);
+        final refreshed = await _refreshToken(request, sentGeneration);
         if (!refreshed) {
           handler.next(err);
           return;
@@ -242,7 +242,7 @@ class DioRefreshInterceptor extends Interceptor {
   /// Skips the refresh if tokens were already rotated past [sentGeneration]
   /// while waiting for the lock. Returns `true` if fresh tokens are available,
   /// `false` if [onRefresh] threw.
-  Future<bool> _refreshTokens(RequestOptions request, int? sentGeneration) {
+  Future<bool> _refreshToken(RequestOptions request, int? sentGeneration) {
     return tokenManager.refreshLock.synchronized(() async {
       // Another request may have refreshed while we waited for the lock.
       if (sentGeneration != null &&
