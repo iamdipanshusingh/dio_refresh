@@ -38,10 +38,13 @@ class DioRefreshInterceptor extends Interceptor {
   /// containing updated tokens.
   final OnRefreshCallback onRefresh;
 
-  /// A callback to determine whether a response should trigger a token refresh.
+  /// A callback to determine whether a failed response should trigger a token refresh.
   ///
   /// The `shouldRefresh` function checks if the response status indicates that a refresh
   /// is necessary (e.g., status code 401 or 403). Returns `true` if a refresh should occur.
+  ///
+  /// This is the only gate for refreshing on error: when it returns `false`, the
+  /// error is forwarded unchanged and no refresh or retry happens.
   final ShouldRefreshCallback shouldRefresh;
 
   /// A callback that returns the headers required for authentication.
@@ -61,9 +64,14 @@ class DioRefreshInterceptor extends Interceptor {
 
   /// An optional callback to check if a token is valid.
   ///
-  /// This is called if [shouldRefresh] returns `true`.
-  /// If not specified, the default is to check that the token can be decoded
-  /// and has not expired.
+  /// This is called in [onRequest], before a request is sent. If it returns
+  /// `false`, the token is refreshed proactively and the request goes out with
+  /// the new token. It is not consulted when a request fails; that decision
+  /// belongs to [shouldRefresh].
+  ///
+  /// If not specified, the default treats a JWT as invalid once it has expired.
+  /// Tokens that cannot be decoded as a JWT (e.g. opaque tokens) are treated as
+  /// valid, leaving the server's response and [shouldRefresh] to decide.
   late final IsTokenValidCallback isTokenValid;
 
   /// Optional callback invoked when [onRefresh] throws.
@@ -116,8 +124,12 @@ class DioRefreshInterceptor extends Interceptor {
   /// Intercepts outgoing requests to add authorization headers.
   ///
   /// Before each request is sent, any in-flight refresh (held by
-  /// [TokenManager.refreshLock]) is awaited. Then the necessary authentication
-  /// headers are added using the [authHeader] callback.
+  /// [TokenManager.refreshLock]) is awaited. If the current access token fails
+  /// [isTokenValid], it is refreshed proactively. Then the necessary
+  /// authentication headers are added using the [authHeader] callback.
+  ///
+  /// If a proactive refresh fails, the request is still sent with the existing
+  /// token; the server remains the authority on whether it is accepted.
   @override
   Future<void> onRequest(
     RequestOptions options,
@@ -125,6 +137,11 @@ class DioRefreshInterceptor extends Interceptor {
   ) async {
     // Wait out any refresh currently holding the lock.
     await tokenManager.refreshLock.synchronized(() {});
+
+    final accessToken = tokenManager.accessToken;
+    if (accessToken != null && !isTokenValid(accessToken)) {
+      await _refreshToken(options, tokenManager.tokenGeneration);
+    }
 
     final header = authHeader(tokenManager.tokenStore);
     final headers = {...options.headers, ...header};
@@ -141,7 +158,8 @@ class DioRefreshInterceptor extends Interceptor {
   ///
   /// When an error response matches the [shouldRefresh] condition (e.g., 401),
   /// the interceptor triggers the `onRefresh` callback to obtain a new token
-  /// and retries the original request with the updated token.
+  /// and retries the original request with the updated token. Errors that do
+  /// not match [shouldRefresh] are forwarded unchanged.
   ///
   /// Concurrent failures serialize on [TokenManager.refreshLock]: the first
   /// request runs [onRefresh]; others wait, see that the generation already
@@ -158,67 +176,19 @@ class DioRefreshInterceptor extends Interceptor {
     // unauthenticated in-flight request to refresh/retry with empty auth headers.
     final sentToken = request.extra[_sentAccessTokenKey] as String?;
     final sentGeneration = request.extra[_sentTokenGenerationKey] as int?;
-    bool shouldRefreshToken = shouldRefresh(response) ||
-        (tokenManager.accessToken != null &&
-            !isTokenValid(tokenManager.accessToken!));
     // Only refresh/retry when THIS request left with an access token. Tokens
     // appearing on TokenManager after send (login / another request's setToken)
     // must not open the gate for a request that never had auth headers.
     final shouldAttemptRefresh = sentToken != null &&
         tokenManager.accessToken != null &&
-        shouldRefreshToken;
+        shouldRefresh(response);
 
     if (shouldAttemptRefresh) {
       final alreadyRefreshed = sentGeneration != null &&
           tokenManager.tokenGeneration != sentGeneration;
 
       if (!alreadyRefreshed) {
-        final refreshed =
-            await tokenManager.refreshLock.synchronized(() async {
-          // Another request may have refreshed while we waited for the lock.
-          if (sentGeneration != null &&
-              tokenManager.tokenGeneration != sentGeneration) {
-            return true;
-          }
-
-          try {
-            // Prefer current TokenManager credentials over whatever was on the
-            // failed request, so refresh never goes out tokenless when tokens
-            // are available.
-            final headers = {
-              ...request.headers,
-              ...authHeader(tokenManager.tokenStore),
-            };
-            headers.remove(HttpHeaders.contentLengthHeader);
-
-            final refreshDio = Dio(BaseOptions(
-              sendTimeout: request.sendTimeout,
-              receiveTimeout: request.receiveTimeout,
-              extra: request.extra,
-              headers: headers,
-              responseType: request.responseType,
-              contentType: request.contentType,
-              validateStatus: request.validateStatus,
-              receiveDataWhenStatusError: request.receiveDataWhenStatusError,
-              followRedirects: request.followRedirects,
-              maxRedirects: request.maxRedirects,
-              requestEncoder: request.requestEncoder,
-              responseDecoder: request.responseDecoder,
-              listFormat: request.listFormat,
-            ));
-            final refreshResponse = await onRefresh(
-              refreshDio,
-              tokenManager.tokenStore,
-            );
-
-            tokenManager.setToken(refreshResponse);
-            return true;
-          } catch (e) {
-            onRefreshFailedCallback?.call(e);
-            return false;
-          }
-        });
-
+        final refreshed = await _refreshToken(request, sentGeneration);
         if (!refreshed) {
           handler.next(err);
           return;
@@ -267,13 +237,67 @@ class DioRefreshInterceptor extends Interceptor {
     }
   }
 
+  /// Runs [onRefresh] under [TokenManager.refreshLock] and stores the result.
+  ///
+  /// Skips the refresh if tokens were already rotated past [sentGeneration]
+  /// while waiting for the lock. Returns `true` if fresh tokens are available,
+  /// `false` if [onRefresh] threw.
+  Future<bool> _refreshToken(RequestOptions request, int? sentGeneration) {
+    return tokenManager.refreshLock.synchronized(() async {
+      // Another request may have refreshed while we waited for the lock.
+      if (sentGeneration != null &&
+          tokenManager.tokenGeneration != sentGeneration) {
+        return true;
+      }
+
+      try {
+        // Prefer current TokenManager credentials over whatever is on the
+        // request, so refresh never goes out tokenless when tokens are
+        // available.
+        final headers = {
+          ...request.headers,
+          ...authHeader(tokenManager.tokenStore),
+        };
+        headers.remove(HttpHeaders.contentLengthHeader);
+
+        final refreshDio = Dio(BaseOptions(
+          sendTimeout: request.sendTimeout,
+          receiveTimeout: request.receiveTimeout,
+          extra: request.extra,
+          headers: headers,
+          responseType: request.responseType,
+          contentType: request.contentType,
+          validateStatus: request.validateStatus,
+          receiveDataWhenStatusError: request.receiveDataWhenStatusError,
+          followRedirects: request.followRedirects,
+          maxRedirects: request.maxRedirects,
+          requestEncoder: request.requestEncoder,
+          responseDecoder: request.responseDecoder,
+          listFormat: request.listFormat,
+        ));
+        final refreshResponse = await onRefresh(
+          refreshDio,
+          tokenManager.tokenStore,
+        );
+
+        tokenManager.setToken(refreshResponse);
+        return true;
+      } catch (e) {
+        onRefreshFailedCallback?.call(e);
+        return false;
+      }
+    });
+  }
+
   /// The default callback for the [IsTokenValidCallback].
   ///
-  /// The token is valid if it can be decoded and the expiration time has not passed.
+  /// A JWT is valid until its expiration time has passed. Tokens that cannot be
+  /// decoded as a JWT are treated as valid, since their expiry is unknown here.
   bool _isAccessTokenValid(String accessToken) {
     try {
       return !JwtDecoder.isExpired(accessToken);
-    } catch (_) {}
-    return false;
+    } catch (_) {
+      return true;
+    }
   }
 }

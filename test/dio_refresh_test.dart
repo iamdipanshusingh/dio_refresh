@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:dio_refresh/dio_refresh.dart';
@@ -102,6 +103,34 @@ class _GatedMockInterceptor extends Interceptor {
     }
     delegate.onRequest(options, handler);
   }
+}
+
+/// Builds an unsigned JWT whose `exp` claim is [exp] (seconds since epoch).
+String _jwt(int exp) {
+  String part(Map<String, dynamic> json) =>
+      base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+  return '${part({'alg': 'HS256', 'typ': 'JWT'})}.${part({'exp': exp})}.sig';
+}
+
+final _expiredJwt = _jwt(1);
+final _validJwt = _jwt(
+  DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/ 1000,
+);
+
+/// Interceptor using the default [IsTokenValidCallback].
+DioRefreshInterceptor _defaultValidityInterceptor({
+  required TokenManager tokenManager,
+  required Future<TokenStore> Function() onRefresh,
+}) {
+  return DioRefreshInterceptor(
+    tokenManager: tokenManager,
+    shouldRefresh: (response) => response?.statusCode == 401,
+    authHeader: (store) => {
+      'authorization': 'Bearer ${store.accessToken}',
+    },
+    retryInterceptors: [_OkRetryInterceptor()],
+    onRefresh: (dio, store) => onRefresh(),
+  );
 }
 
 DioRefreshInterceptor _refreshInterceptor({
@@ -364,6 +393,153 @@ void main() {
 
     expect(refreshRequest.headers['authorization'], 'Bearer old-access');
     expect(refreshRequest.headers['x-refresh-token'], 'old-refresh');
+  });
+
+  group('shouldRefresh / isTokenValid separation', () {
+    test('expired token does not refresh on errors shouldRefresh rejects',
+        () async {
+      var refreshCalls = 0;
+      var sends = 0;
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+      dio.interceptors.add(DioRefreshInterceptor(
+        tokenManager: tokenManager,
+        shouldRefresh: (response) => response?.statusCode == 401,
+        // Expired locally, but refresh must not be triggered by a 500.
+        isTokenValid: (_) => sends > 0 ? false : true,
+        authHeader: (store) => {
+          'authorization': 'Bearer ${store.accessToken}',
+        },
+        retryInterceptors: [_OkRetryInterceptor()],
+        onRefresh: (dio, store) async {
+          refreshCalls++;
+          return TokenStore(accessToken: 'new-a', refreshToken: 'new-r');
+        },
+      ));
+      dio.httpClientAdapter = _CallbackAdapter((_) {
+        sends++;
+        return ResponseBody.fromString('boom', 500);
+      });
+
+      await expectLater(
+        dio.post('/orders'),
+        throwsA(isA<DioException>().having(
+          (e) => e.response?.statusCode,
+          'statusCode',
+          500,
+        )),
+      );
+      expect(refreshCalls, 0);
+      expect(sends, 1);
+    });
+
+    test('expired JWT is refreshed before the request is sent', () async {
+      tokenManager.setToken(TokenStore(
+        accessToken: _expiredJwt,
+        refreshToken: 'old-refresh',
+      ));
+      var refreshCalls = 0;
+      final sentAuth = <String?>[];
+
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+      dio.interceptors.add(_defaultValidityInterceptor(
+        tokenManager: tokenManager,
+        onRefresh: () async {
+          refreshCalls++;
+          return TokenStore(accessToken: _validJwt, refreshToken: 'new-r');
+        },
+      ));
+      dio.httpClientAdapter = _CallbackAdapter((options) {
+        sentAuth.add(options.headers['authorization'] as String?);
+        return ResponseBody.fromString('{}', 200);
+      });
+
+      await dio.get('/a');
+      await dio.get('/b');
+
+      expect(refreshCalls, 1);
+      expect(sentAuth, ['Bearer $_validJwt', 'Bearer $_validJwt']);
+    });
+
+    test('concurrent requests with an expired JWT share one proactive refresh',
+        () async {
+      tokenManager.setToken(TokenStore(
+        accessToken: _expiredJwt,
+        refreshToken: 'old-refresh',
+      ));
+      var refreshCalls = 0;
+      final releaseRefresh = Completer<void>();
+
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+      dio.interceptors.add(_defaultValidityInterceptor(
+        tokenManager: tokenManager,
+        onRefresh: () async {
+          refreshCalls++;
+          await releaseRefresh.future;
+          return TokenStore(accessToken: _validJwt, refreshToken: 'new-r');
+        },
+      ));
+      dio.httpClientAdapter =
+          _CallbackAdapter((_) => ResponseBody.fromString('{}', 200));
+
+      final futures = Future.wait([dio.get('/a'), dio.get('/b')]);
+      await Future<void>.delayed(Duration.zero);
+      releaseRefresh.complete();
+      await futures;
+
+      expect(refreshCalls, 1);
+    });
+
+    test('failed proactive refresh still sends the request', () async {
+      tokenManager.setToken(TokenStore(
+        accessToken: _expiredJwt,
+        refreshToken: 'old-refresh',
+      ));
+      final sentAuth = <String?>[];
+      final failures = <dynamic>[];
+
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+      dio.interceptors.add(DioRefreshInterceptor(
+        tokenManager: tokenManager,
+        shouldRefresh: (response) => response?.statusCode == 401,
+        authHeader: (store) => {
+          'authorization': 'Bearer ${store.accessToken}',
+        },
+        onRefreshFailedCallback: failures.add,
+        onRefresh: (dio, store) async => throw Exception('refresh down'),
+      ));
+      dio.httpClientAdapter = _CallbackAdapter((options) {
+        sentAuth.add(options.headers['authorization'] as String?);
+        return ResponseBody.fromString('{}', 200);
+      });
+
+      final res = await dio.get('/a');
+
+      expect(res.statusCode, 200);
+      expect(sentAuth, ['Bearer $_expiredJwt']);
+      expect(failures, hasLength(1));
+    });
+
+    test('opaque tokens are not refreshed by the default validator', () async {
+      tokenManager.setToken(TokenStore(
+        accessToken: 'opaque-token',
+        refreshToken: 'old-refresh',
+      ));
+      var refreshCalls = 0;
+
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
+      dio.interceptors.add(_defaultValidityInterceptor(
+        tokenManager: tokenManager,
+        onRefresh: () async {
+          refreshCalls++;
+          return TokenStore(accessToken: 'new-a', refreshToken: 'new-r');
+        },
+      ));
+      dio.httpClientAdapter =
+          _CallbackAdapter((_) => ResponseBody.fromString('missing', 404));
+
+      await expectLater(dio.get('/a'), throwsA(isA<DioException>()));
+      expect(refreshCalls, 0);
+    });
   });
 }
 

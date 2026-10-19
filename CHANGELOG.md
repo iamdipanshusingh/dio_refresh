@@ -1,3 +1,11 @@
+## 2.0.0
+
+* **Breaking:** `shouldRefresh` and `isTokenValid` now have separate responsibilities. If you relied on refreshing after arbitrary errors with an expired token, include that condition in your `shouldRefresh` callback.
+  * `shouldRefresh` is now the only gate for refreshing on error. Previously, any failed request (500s, timeouts, connection errors, ...) also triggered a refresh and retry whenever `isTokenValid` reported the current token as invalid, even if `shouldRefresh` returned `false`, which could resend non-idempotent requests (e.g. a `POST` that returned 500). This reverts part of 1.0.6; revoked tokens are still handled, since the server's 401 matches `shouldRefresh`.
+  * `isTokenValid` is now checked in `onRequest`, before a request is sent. Expired tokens are refreshed proactively (deduplicated across concurrent requests via `TokenManager.refreshLock`). If that refresh fails, the request is still sent with the existing token, and `onRefreshFailedCallback` is invoked.
+  * The default `isTokenValid` now treats tokens that cannot be decoded as a JWT as valid. Previously, opaque tokens were always considered invalid, so every failed request triggered a refresh.
+* Fixed the docs for `isTokenValid`, which said it was called when `shouldRefresh` returned `true` (it was actually called when it returned `false`).
+
 ## 1.2.3
 
 * Fixed a race where a request sent without an access token could still enter the
